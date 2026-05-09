@@ -143,4 +143,6 @@ def init_db():
     with app.app_context():
         db.create_all()
 
-init_db()
+if __name__ == "__main__":
+    init_db()
+    app.run(debug=False)
