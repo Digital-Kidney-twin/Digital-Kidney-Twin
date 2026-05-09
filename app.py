@@ -1,4 +1,3 @@
-
 import os
 import numpy as np
 from datetime import datetime, timedelta
@@ -63,26 +62,37 @@ LEXICON = {
         'current_cond': 'الحالة الحالية', 'sim_water': 'محاكاة: زيادة شرب الماء',
         'smoker': 'مدخن؟', 'yes': 'نعم', 'no': 'لا', 'next': 'استمرار',
         'heart': 'أمراض القلب', 'family': 'تاريخ عائلي', 'diabetes': 'سكري', 'htn': 'ضغط دم',
-        'confirm_del': 'حذف المريض؟', 'developed_by': 'تطوير: عولمي منار و روابح شيماء'
+        'confirm_del': 'حذف المريض؟', 'developed_by': 'تطوير: أولمي منار و روابح شيماء'
     }
 }
 
 # --- MODÈLES ---
 class Patient(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100)); age = db.Column(db.Integer); weight = db.Column(db.Float)
-    gender = db.Column(db.String(10)); is_smoker = db.Column(db.Boolean)
-    has_diabetes = db.Column(db.Boolean); has_heart_disease = db.Column(db.Boolean)
+    name = db.Column(db.String(100))
+    age = db.Column(db.Integer)
+    weight = db.Column(db.Float)
+    gender = db.Column(db.String(10))
+    is_smoker = db.Column(db.Boolean)
+    has_diabetes = db.Column(db.Boolean)
+    has_heart_disease = db.Column(db.Boolean)
     records = db.relationship('HealthRecord', backref='patient', cascade="all, delete-orphan", lazy=True)
 
 class HealthRecord(db.Model):
-    id = db.Column(db.Integer, primary_key=True); date = db.Column(db.Date)
-    creatinine = db.Column(db.Float); albumin = db.Column(db.Float); egfr = db.Column(db.Float)
-    urine_concentration = db.Column(db.String(20)); patient_id = db.Column(db.Integer, db.ForeignKey('patient.id'))
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date)
+    creatinine = db.Column(db.Float)
+    albumin = db.Column(db.Float)
+    egfr = db.Column(db.Float)
+    urine_concentration = db.Column(db.String(20))
+    patient_id = db.Column(db.Integer, db.ForeignKey('patient.id'))
 
 def calculate_egfr(cr, age, gender):
-    if cr <= 0: return 0
-    k, a, gm = (0.7, -0.241, 1.012) if gender.lower() == 'female' else (0.9, -0.302, 1.0)
+    if cr <= 0:
+        return 0
+    k = 0.7 if gender.lower() == 'female' else 0.9
+    a = -0.241 if gender.lower() == 'female' else -0.302
+    gm = 1.012 if gender.lower() == 'female' else 1.0
     return round(142 * (min(cr/k, 1)**a) * (max(cr/k, 1)**-1.2) * (0.9938**age) * gm, 1)
 
 @app.context_processor
@@ -91,54 +101,92 @@ def inject_vars():
     return dict(text=LEXICON[l], lang=l, rtl=(l == 'ar'), now=datetime.utcnow())
 
 @app.route('/')
-def index(): return render_template('index.html')
+def index():
+    return render_template('index.html')
 
 @app.route('/dashboard')
-def dashboard(): return render_template('dashboard.html', patients=Patient.query.all())
+def dashboard():
+    return render_template('dashboard.html', patients=Patient.query.all())
 
 @app.route('/register')
-def register(): return render_template('register.html')
+def register():
+    return render_template('register.html')
 
 @app.route('/set_lang/<l>')
 def set_lang(l):
-    session['lang'] = l; return redirect(request.referrer or url_for('index'))
+    session['lang'] = l
+    return redirect(request.referrer or url_for('index'))
 
 @app.route('/add_patient', methods=['POST'])
 def add_patient():
-    p = Patient(name=request.form.get('name'), age=int(request.form.get('age')), weight=float(request.form.get('weight')), 
-                gender=request.form.get('gender'), is_smoker=(request.form.get('smoker') == 'true'),
-                has_diabetes='diabetes' in request.form, has_heart_disease='heart' in request.form)
-    db.session.add(p); db.session.commit(); return redirect(url_for('patient_detail', id=p.id))
+    p = Patient(
+        name=request.form.get('name'),
+        age=int(request.form.get('age')),
+        weight=float(request.form.get('weight')),
+        gender=request.form.get('gender'),
+        is_smoker=(request.form.get('smoker') == 'true'),
+        has_diabetes='diabetes' in request.form,
+        has_heart_disease='heart' in request.form
+    )
+    db.session.add(p)
+    db.session.commit()
+    return redirect(url_for('patient_detail', id=p.id))
 
 @app.route('/patient/<int:id>')
 def patient_detail(id):
     p = Patient.query.get_or_404(id)
     recs = sorted(p.records, key=lambda x: x.date)
     latest = recs[-1] if recs else None
-    stage, color = 1, "#1e293b"
-    if latest:
-        if latest.egfr >= 90: stage, color = 1, "#10b981"
-        elif latest.egfr >= 60: stage, color = 2, "#facc15"
-        elif latest.egfr >= 30: stage, color = 3, "#f97316"
-        elif latest.egfr >= 15: stage, color = 4, "#ef4444"
-        else: stage, color = 5, "#7f1d1d"
+    stage = 1
+    color = "#1e293b"
     
-    pred_val = round(recs[-1].egfr - 2, 1) if len(recs) >= 2 else None
+    if latest:
+        if latest.egfr >= 90:
+            stage, color = 1, "#10b981"
+        elif latest.egfr >= 60:
+            stage, color = 2, "#facc15"
+        elif latest.egfr >= 30:
+            stage, color = 3, "#f97316"
+        elif latest.egfr >= 15:
+            stage, color = 4, "#ef4444"
+        else:
+            stage, color = 5, "#7f1d1d"
+    
+    pred_val = None
+    if len(recs) >= 2:
+        pred_val = round(recs[-1].egfr - 2, 1)
+    
     return render_template('patient_detail.html', p=p, records=recs, latest=latest, stage=stage, color=color, pred_val=pred_val)
 
 @app.route('/add_record/<int:p_id>', methods=['POST'])
 def add_record(p_id):
     p = Patient.query.get_or_404(p_id)
-    cr, alb = float(request.form.get('creatinine')), float(request.form.get('albumin'))
+    cr = float(request.form.get('creatinine'))
+    alb = float(request.form.get('albumin'))
     dt = datetime.strptime(request.form.get('date'), '%Y-%m-%d').date()
-    db.session.add(HealthRecord(date=dt, creatinine=cr, albumin=alb, egfr=calculate_egfr(cr, p.age, p.gender),
-                                urine_concentration=request.form.get('urine_concentration'), patient_id=p.id))
-    db.session.commit(); return redirect(url_for('patient_detail', id=p_id))
+    
+    db.session.add(HealthRecord(
+        date=dt,
+        creatinine=cr,
+        albumin=alb,
+        egfr=calculate_egfr(cr, p.age, p.gender),
+        urine_concentration=request.form.get('urine_concentration'),
+        patient_id=p.id
+    ))
+    db.session.commit()
+    return redirect(url_for('patient_detail', id=p_id))
 
 @app.route('/delete_patient/<int:id>', methods=['POST'])
 def delete_patient(id):
-    p = Patient.query.get(id); db.session.delete(p); db.session.commit(); return redirect(url_for('dashboard'))
+    p = Patient.query.get(id)
+    db.session.delete(p)
+    db.session.commit()
+    return redirect(url_for('dashboard'))
 
 def init_db():
     with app.app_context():
         db.create_all()
+
+# هذا هو السطر الذي كان يسبب المشكلة (السطر 144)
+if __name__ == '__main__':
+    app.run(debug=False)
