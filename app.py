@@ -139,6 +139,5 @@ def add_record(p_id):
 def delete_patient(id):
     p = Patient.query.get(id); db.session.delete(p); db.session.commit(); return redirect(url_for('dashboard'))
 
-if __name__ == '__main__':
-    with app.app_context(): db.create_all()
-   app.run(debug=False)
+if __name__ == "__main__":
+    app.run(debug=False)
